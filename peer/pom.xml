@@ -9,7 +9,7 @@
     <version>1.0-SNAPSHOT</version>
   </parent>
 
-  <artifactId>peer-b</artifactId>
+  <artifactId>peer</artifactId>
 
   <properties>
     <maven.compiler.source>17</maven.compiler.source>
@@ -29,7 +29,7 @@
             <manifest>
               <addClasspath>true</addClasspath>
               <classpathPrefix>lib/</classpathPrefix>
-              <mainClass>com.data.acquisition.proxy.platform.PeerB</mainClass>
+              <mainClass>com.data.acquisition.proxy.platform.Peer</mainClass>
             </manifest>
           </archive>
         </configuration>

@@ -4,9 +4,14 @@ import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.*;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.StringJoiner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import lombok.Data;
+import lombok.experimental.Accessors;
 
 /**
  * @author user
@@ -16,26 +21,8 @@ public class RendezvousServer {
   private int tcpDiscussionPort = 9000;
   private int tcpPunchPort = 9001;
 
-  private BufferedReader inConnectA, inPunchA;
-  private BufferedOutputStream outConnectA, outPunchA;
-
-  private BufferedReader inConnectB, inPunchB;
-  private BufferedOutputStream outConnectB, outPunchB;
-
-  private ServerSocket socketConnect, socketPunch;
-
-  private Socket clientAConnect, clientAPunch, clientBConnect, clientBPunch;
-
-
-  private boolean readClientA = false;
-  private String clientAIp = "";
-  private String clientAPort = "";
-  private String clientAPortLocal = "";
-
-  private boolean readClientB = false;
-  private String clientBIp = "";
-  private String clientBPort = "";
-  private String clientBPortLocal = "";
+  private final PeerInfo peerA = new PeerInfo().setName("Peer A");
+  private final PeerInfo peerB = new PeerInfo().setName("Peer B");
 
   //Constructor using default tcp discussion/punch ports
   public RendezvousServer() {
@@ -58,9 +45,9 @@ public class RendezvousServer {
   }
 
   public static void main(String[] args) throws IOException {
-    if (args.length > 0) {//Give args
+    if (args.length > 0) {
       new RendezvousServer(Integer.parseInt(args[0].trim()), Integer.parseInt(args[1].trim()));
-    } else {//Give no args
+    } else {
       new RendezvousServer();
     }
   }
@@ -68,135 +55,126 @@ public class RendezvousServer {
   //Run server listening clients
   void runServer() throws IOException {
     //Create Server Socket for accepting Client TCP connections
-
-    System.out.println("Server started with ports, TCP connection: " + tcpDiscussionPort + " TCP: " + tcpPunchPort);
+    System.out.println("**********");
+    System.out.println("SERVER STARTED");
+    System.out.println("---------");
+    System.out.println("Discussion Port: " + tcpDiscussionPort);
+    System.out.println("Punch Port: " + tcpPunchPort);
+    System.out.println("**********");
 
     runDiscussionServer();
     runPunchServer();
   }
 
-  private void runDiscussionServer(){
-    new Thread(new Runnable() {
-      @Override
-      public void run() {
-        try{
-          socketConnect = new ServerSocket(tcpDiscussionPort);
-
-          System.out.println("Waiting for Client A");
-
-          //Accept first client connection
-          clientAConnect = socketConnect.accept();
-          System.out.println("Client 1 connected " + clientAConnect.getInetAddress() + " " + clientAConnect.getPort());
-
-          //Create input and output streams to read/write messages for CLIENT A
-          inConnectA = new BufferedReader(new InputStreamReader(clientAConnect.getInputStream()));
-          outConnectA = new BufferedOutputStream(clientAConnect.getOutputStream());
-
-          System.out.println("Waiting for Client B");
-
-          //Accept second client connection
-          clientBConnect = socketConnect.accept();
-          System.out.println("Client 2 connected " + clientBConnect.getInetAddress() + " " + clientBConnect.getPort());
-
-          //Create input and output streams to read/write messages for CLIENT B
-          inConnectB = new BufferedReader(new InputStreamReader(clientBConnect.getInputStream()));
-          outConnectB = new BufferedOutputStream(clientBConnect.getOutputStream());
-        }catch (IOException ioe){
-          ioe.printStackTrace();
-        }
+  private void runDiscussionServer() {
+    new Thread(() -> {
+      try {
+        var socketConnect = new ServerSocket(tcpDiscussionPort);
+        acceptConnectionAndFillPeerInfo(socketConnect, peerA);
+        acceptConnectionAndFillPeerInfo(socketConnect, peerB);
+      } catch (IOException ioe) {
+        ioe.printStackTrace();
       }
-    }).start();
+    }, "discussion-server").start();
   }
 
-  private void runPunchServer(){
-    new Thread(new Runnable() {
-      @Override
-      public void run() {
-        try{
-          socketPunch = new ServerSocket(tcpPunchPort);
-
-          System.out.println("Waiting for Client A punch");
-
-          //Accept first client connection
-          clientAPunch = socketPunch.accept();
-          clientAIp = ((InetSocketAddress)clientAPunch.getRemoteSocketAddress()).getAddress().getHostAddress().trim();
-          clientAPortLocal = String.valueOf(clientAPunch.getPort());
-          clientAPort = String.valueOf(clientAPunch.getLocalPort());
-
-          System.out.println("Client A punch " + clientAPunch.getInetAddress() + " " + clientAPunch.getPort());
-
-          //Create input and output streams to read/write messages for CLIENT A
-          inPunchA = new BufferedReader(new InputStreamReader(clientAPunch.getInputStream()));
-          outPunchA = new BufferedOutputStream(clientAPunch.getOutputStream());
-
-
-          System.out.println("Waiting for Client B punch");
-          //Accept second client connection
-          clientBPunch = socketPunch.accept();
-          clientBIp = ((InetSocketAddress)clientBPunch.getRemoteSocketAddress()).getAddress().getHostAddress().trim();
-          clientBPortLocal = String.valueOf(clientBPunch.getPort());
-          clientBPort = String.valueOf(clientBPunch.getLocalPort());
-
-          System.out.println("Client 2 punch " + clientBPunch.getInetAddress() + " " + clientBPunch.getPort());
-
-          //Create input and output streams to read/write messages for CLIENT B
-          inPunchB = new BufferedReader(new InputStreamReader(clientBPunch.getInputStream()));
-          outPunchB = new BufferedOutputStream(clientBPunch.getOutputStream());
-
-
-          //Once the two clients have punched
-          proceedInfosExchange();
-        }catch (IOException ioe){
-          ioe.printStackTrace();
-        }
-      }
-    }).start();
+  private static void acceptConnectionAndFillPeerInfo(ServerSocket socketConnect, PeerInfo peerInfo)
+      throws IOException {
+    String peerName = peerInfo.getName();
+    System.out.println("Waiting for " + peerName);
+    Socket peerASocket = socketConnect.accept();
+    System.out.println(
+        peerName + " connected " + peerASocket.getInetAddress() + " " + peerASocket.getPort());
+    //Create input and output streams to read/write messages for Peer A
+    peerInfo.setInConnect(new BufferedReader(new InputStreamReader(peerASocket.getInputStream())));
+    peerInfo.setOutConnect(new BufferedOutputStream(peerASocket.getOutputStream()));
   }
 
-  private void proceedInfosExchange() throws IOException{
-    /**
-     *
-     * *** FIRST CLIENT'S PUBLIC IP AND PORTS ****
-     */
-    while (!readClientA) {
-      String message = inPunchA.readLine();
-      if (message.trim().equals("one")) {
-        readClientA = true;
-        System.out.println("Initial punch message from CLIENT A: " + message);
+  private void runPunchServer() {
+    new Thread(() -> {
+      try {
+        var socketPunch = new ServerSocket(tcpPunchPort);
+
+        //Accept first client connection
+        acceptPunchAndFillPeerInfo(socketPunch, peerA);
+
+        //Accept second client connection
+        acceptPunchAndFillPeerInfo(socketPunch, peerB);
+
+        //Once the two clients have punched
+        proceedInfosExchange();
+      } catch (IOException ioe) {
+        ioe.printStackTrace();
       }
-    }
+    }, "punch-server").start();
+  }
 
-    System.out.println("******CLIENT A IP AND PORT DETECTED " + clientAIp + ":" +  clientAPortLocal + "->" + clientAPort + " *****");
+  private static void acceptPunchAndFillPeerInfo(ServerSocket socketPunch, PeerInfo peerInfo)
+      throws IOException {
+    String peerName = peerInfo.getName();
+    System.out.println("Waiting for " + peerName + " punch");
+    var peerPunchSocket = socketPunch.accept();
+    InetSocketAddress remoteSocketAddress = (InetSocketAddress) peerPunchSocket.getRemoteSocketAddress();
+    peerInfo
+        .setIp(remoteSocketAddress.getAddress().getHostAddress().trim())
+        .setLocalPort(String.valueOf(peerPunchSocket.getPort()))
+        .setPublicPort(String.valueOf(peerPunchSocket.getLocalPort()));
+    System.out.println("Punch from " + peerName + " " + peerPunchSocket.getInetAddress() + " "
+        + peerPunchSocket.getPort());
 
-    /**
-     *
-     * *** SECOND CLIENT'S PUBLIC IP AND PORTS ****
-     */
-    while (!readClientB) {
-      String message = inPunchB.readLine();   //Get Data from tcp packet into a string
-      if (message.trim().equals("two")) {
-        readClientB = true;
-        System.out.println("Initial punch message from CLIENT B: " + message);
-      }
-    }
-    System.out.println("******CLIENT B IP AND PORT DETECTED " + clientBIp + ":" +  clientBPortLocal + "->" + clientBPort + " *****");
+    System.out.println(
+        peerName + " punch " + peerPunchSocket.getInetAddress() + " " + peerPunchSocket.getPort());
 
-        /*
-         !!!!!!!!!!!CRITICAL PART!!!!!!!!
-         The core of hole punching depends on this part.
-         */
+    //Create input and output streams to read/write messages for Peer
+    peerInfo.setInPunch(
+        new BufferedReader(new InputStreamReader(peerPunchSocket.getInputStream())));
+    peerInfo.setOutPunch(new BufferedOutputStream(peerPunchSocket.getOutputStream()));
+  }
+
+  private void printPeerInfo(PeerInfo peer) {
+    System.out.println(
+        "******" + peer.getName() + " IP AND PORT DETECTED " + peer.getIp() + ":"
+            + peer.getLocalPort() + " -> "
+            + peer.getPublicPort() + " *****");
+  }
+
+  private void proceedInfosExchange() throws IOException {
+    printPeerInfo(peerA);
+    printPeerInfo(peerB);
 
     System.out.println("***** Exchanging public IP and port between the clients *****");
-    while (true) {
-      String string = clientAIp + "~~" + clientAPort + "~~" + clientAPortLocal + "~~" + clientBIp + "~~" + clientBPort + "~~" + clientBPortLocal;
-      outConnectA.write(string.getBytes());      //SENDING CLIENT B's public IP & PORT TO CLIENT A
-      outConnectA.write('\n');
-      outConnectA.flush();
+    //SENDING Peer B's public IP & PORT TO Peer A
+    String peerBInfo = peerB.serialize();
+    send(peerBInfo, peerA);
 
-      String string1 = clientBIp + "~~" + clientBPort + "~~" + clientBPortLocal + "~~" + clientAIp + "~~" + clientAPort + "~~" + clientAPortLocal;
-      outConnectB.write(string1.getBytes());     //SENDING CLIENT A's public IP & PORT TO CLIENT B
-      outConnectB.write('\n');
-      outConnectB.flush();
-    }
+    //SENDING Peer A's public IP & PORT TO Peer B
+    String peerAInfo = peerA.serialize();
+    send(peerAInfo, peerB);
+  }
+
+  private void send(String msg, PeerInfo peer) throws IOException {
+    BufferedOutputStream outConnectB = peer.getOutConnect();
+    outConnectB.write(msg.getBytes());
+    outConnectB.write('\n');
+    outConnectB.flush();
+  }
+}
+
+
+
+@Data
+@Accessors(chain = true)
+class PeerInfo {
+
+  private String name;
+  private String ip;
+  private String publicPort;
+  private String localPort;
+
+  private BufferedReader inConnect, inPunch;
+  private BufferedOutputStream outConnect, outPunch;
+
+  public String serialize() {
+    return new StringJoiner("~~").add(ip).add(publicPort).add(localPort).toString();
   }
 }
